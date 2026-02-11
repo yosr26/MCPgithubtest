@@ -111,4 +111,44 @@ public class GitHubTools {
             return "Error fetching last commit for repository '" + username + "/" + repository + "': " + e.getMessage();
         }
     }
+
+    @Tool(name = "getMyRepositories", description = "Get all repositories (including private ones) for the authenticated GitHub user. This only works if a GitHub token is configured. Returns both public and private repositories with their details.")
+    public String getMyRepositories() {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot access private repositories. GitHub token is not configured in the MCP server.";
+            }
+
+            List<GitHubRepository> repos = gitHubService.getAuthenticatedUserRepositories();
+
+            if (repos == null || repos.isEmpty()) {
+                return "No repositories found for the authenticated user.";
+            }
+
+            // Count private vs public
+            long privateCount = repos.stream().filter(GitHubRepository::isPrivate).count();
+            long publicCount = repos.size() - privateCount;
+
+            StringBuilder result = new StringBuilder();
+            result.append(String.format("Found %d repositories for authenticated user:\n", repos.size()));
+            result.append(String.format("📊 %d public, %d private\n\n", publicCount, privateCount));
+
+            for (GitHubRepository repo : repos) {
+                String visibility = repo.isPrivate() ? "🔒 PRIVATE" : "🌐 PUBLIC";
+                result.append(String.format("%s %s\n", visibility, repo.name()));
+                result.append(String.format("   Description: %s\n",
+                        repo.description() != null ? repo.description() : "No description"));
+                result.append(String.format("   Language: %s\n",
+                        repo.language() != null ? repo.language() : "Unknown"));
+                result.append(String.format("   ⭐ Stars: %d | 🍴 Forks: %d\n",
+                        repo.stars(), repo.forks()));
+                result.append(String.format("   URL: %s\n", repo.htmlUrl()));
+                result.append(String.format("   Last updated: %s\n\n", repo.updatedAt()));
+            }
+
+            return result.toString();
+        } catch (Exception e) {
+            return "Error fetching repositories: " + e.getMessage();
+        }
+    }
 }

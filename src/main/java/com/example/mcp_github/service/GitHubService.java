@@ -11,10 +11,13 @@ import java.util.List;
 public class GitHubService {
 
     private final WebClient webClient;
+    private final boolean hasToken;
 
     public GitHubService(
             @Value("${github.api.base-url}") String baseUrl,
             @Value("${github.api.token:}") String token) {
+
+        this.hasToken = token != null && !token.isEmpty();
 
         WebClient.Builder builder = WebClient.builder()
                 .baseUrl(baseUrl)
@@ -27,9 +30,24 @@ public class GitHubService {
         this.webClient = builder.build();
     }
 
+    // For any user's PUBLIC repos
     public List<GitHubRepository> getUserRepositories(String username) {
         return webClient.get()
                 .uri("/users/{username}/repos?sort=updated&per_page=100", username)
+                .retrieve()
+                .bodyToFlux(GitHubRepository.class)
+                .collectList()
+                .block();
+    }
+
+    // For authenticated user's ALL repos (public + private)
+    public List<GitHubRepository> getAuthenticatedUserRepositories() {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required");
+        }
+
+        return webClient.get()
+                .uri("/user/repos?per_page=100&type=all")
                 .retrieve()
                 .bodyToFlux(GitHubRepository.class)
                 .collectList()
@@ -57,5 +75,9 @@ public class GitHubService {
                 .block();
 
         return commits != null && !commits.isEmpty() ? commits.get(0) : null;
+    }
+
+    public boolean hasAuthentication() {
+        return hasToken;
     }
 }
