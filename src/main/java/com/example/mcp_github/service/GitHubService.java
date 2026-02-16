@@ -3,6 +3,7 @@ package com.example.mcp_github.service;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -19,6 +20,7 @@ import com.example.mcp_github.model.GitHubSearchResult;
 import com.example.mcp_github.model.GitHubUser;
 import com.example.mcp_github.model.GitHubWorkflowRun;
 import com.example.mcp_github.model.GitHubWorkflowRunsResponse;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Service
 public class GitHubService {
@@ -65,6 +67,59 @@ public class GitHubService {
                 .retrieve()
                 .bodyToFlux(GitHubRepository.class)
                 .collectList()
+                .block();
+    }
+
+    // ==================== REPOSITORY MANAGEMENT ====================
+    public GitHubRepository createRepository(String name, String description, boolean isPrivate) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to create repositories");
+        }
+
+        record CreateRepoRequest(String name, String description, @JsonProperty("private")
+                boolean isPrivate) {
+
+        }
+
+        var requestBody = new CreateRepoRequest(name, description, isPrivate);
+
+        return webClient.post()
+                .uri("/user/repos")
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(GitHubRepository.class)
+                .block();
+    }
+
+    public void deleteRepository(String username, String repo) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to delete repositories");
+        }
+
+        webClient.delete()
+                .uri("/repos/{username}/{repo}", username, repo)
+                .retrieve()
+                .bodyToMono(Void.class)
+                .block();
+    }
+
+    public GitHubRepository updateRepository(String username, String repo, String name, String description, boolean isPrivate) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to update repositories");
+        }
+
+        record UpdateRepoRequest(String name, String description, @JsonProperty("private")
+                boolean isPrivate) {
+
+        }
+
+        var requestBody = new UpdateRepoRequest(name, description, isPrivate);
+
+        return webClient.patch()
+                .uri("/repos/{username}/{repo}", username, repo)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(GitHubRepository.class)
                 .block();
     }
 
@@ -147,6 +202,25 @@ public class GitHubService {
                 .block();
     }
 
+    public GitHubPullRequest createPullRequest(String username, String repo, String title, String head, String base, String body) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to create pull requests");
+        }
+
+        record CreatePRRequest(String title, String head, String base, String body) {
+
+        }
+
+        var requestBody = new CreatePRRequest(title, head, base, body);
+
+        return webClient.post()
+                .uri("/repos/{username}/{repo}/pulls", username, repo)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(GitHubPullRequest.class)
+                .block();
+    }
+
     // ==================== BRANCHES ====================
     public List<GitHubBranch> getRepositoryBranches(String username, String repo) {
         return webClient.get()
@@ -154,6 +228,60 @@ public class GitHubService {
                 .retrieve()
                 .bodyToFlux(GitHubBranch.class)
                 .collectList()
+                .block();
+    }
+
+    public GitHubBranch createBranch(String username, String repo, String branchName, String fromBranch) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to create branches");
+        }
+
+        // First, get the SHA of the commit from the source branch
+        GitHubBranch sourceBranch = webClient.get()
+                .uri("/repos/{username}/{repo}/branches/{branch}", username, repo, fromBranch)
+                .retrieve()
+                .bodyToMono(GitHubBranch.class)
+                .block();
+
+        if (sourceBranch == null) {
+            throw new IllegalStateException("Source branch not found: " + fromBranch);
+        }
+
+        // Create the new branch reference
+        record CreateRefRequest(String ref, String sha) {
+
+        }
+
+        var requestBody = new CreateRefRequest("refs/heads/" + branchName, sourceBranch.commit().sha());
+
+        record RefResponse(String ref, String url, GitHubBranch.GitHubCommitRef object) {
+
+        }
+
+        webClient.post()
+                .uri("/repos/{username}/{repo}/git/refs", username, repo)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(RefResponse.class)
+                .block();
+
+        // Return the newly created branch
+        return webClient.get()
+                .uri("/repos/{username}/{repo}/branches/{branch}", username, repo, branchName)
+                .retrieve()
+                .bodyToMono(GitHubBranch.class)
+                .block();
+    }
+
+    public void deleteBranch(String username, String repo, String branchName) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to delete branches");
+        }
+
+        webClient.delete()
+                .uri("/repos/{username}/{repo}/git/refs/heads/{branch}", username, repo, branchName)
+                .retrieve()
+                .bodyToMono(Void.class)
                 .block();
     }
 
@@ -219,6 +347,79 @@ public class GitHubService {
                 .uri("/repos/{username}/{repo}/contents/{path}", username, repo, path)
                 .retrieve()
                 .bodyToMono(GitHubContent.class)
+                .block();
+    }
+
+    // ==================== FILE OPERATIONS ====================
+    public String pushFileContent(String username, String repo, String path, String content,
+            String message, String branch) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to push files");
+        }
+
+        // Check if file exists to get its SHA (required for updates)
+        String fileSha = null;
+        try {
+            GitHubContent existingFile = getFileContent(username, repo, path);
+            if (existingFile != null) {
+                fileSha = existingFile.sha();
+            }
+        } catch (Exception e) {
+            // File doesn't exist, will be created
+        }
+
+        record PushFileRequest(
+                String message,
+                String content,
+                String sha,
+                String branch) {
+
+        }
+
+        record PushFileResponse(GitHubContent content, Object commit) {
+
+        }
+
+        // Encode content to base64
+        String encodedContent = java.util.Base64.getEncoder().encodeToString(content.getBytes());
+
+        var requestBody = new PushFileRequest(message, encodedContent, fileSha, branch);
+
+        PushFileResponse response = webClient.put()
+                .uri("/repos/{username}/{repo}/contents/{path}", username, repo, path)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(PushFileResponse.class)
+                .block();
+
+        if (response != null && response.commit() != null) {
+            return ((java.util.Map<String, Object>) response.commit()).get("sha").toString();
+        }
+        return null;
+    }
+
+    public void deleteFile(String username, String repo, String path, String message, String branch) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to delete files");
+        }
+
+        // Get the file's SHA (required for deletion)
+        GitHubContent file = getFileContent(username, repo, path);
+        if (file == null) {
+            throw new IllegalStateException("File not found: " + path);
+        }
+
+        record DeleteFileRequest(String message, String sha, String branch) {
+
+        }
+
+        var requestBody = new DeleteFileRequest(message, file.sha(), branch);
+
+        webClient.method(HttpMethod.DELETE)
+                .uri("/repos/{username}/{repo}/contents/{path}", username, repo, path)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(Void.class)
                 .block();
     }
 

@@ -97,6 +97,79 @@ public class GitHubTools {
         }
     }
 
+    @Tool(name = "createRepository", description = "Create a new GitHub repository. Requires authentication. Specify the repository name, description, and whether it should be private (true/false).")
+    public String createRepository(String name, String description, Boolean isPrivate) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot create repository. GitHub token is not configured.";
+            }
+
+            boolean privateRepo = isPrivate != null ? isPrivate : false;
+            String repoDescription = (description != null && !description.isEmpty()) ? description : "";
+
+            GitHubRepository repo = gitHubService.createRepository(name, repoDescription, privateRepo);
+
+            return String.format("""
+                    ✅ Repository created successfully!
+                    
+                    Name: %s
+                    Description: %s
+                    Visibility: %s
+                    URL: %s
+                    """,
+                    repo.name(),
+                    repo.description() != null ? repo.description() : "No description",
+                    repo.isPrivate() ? "🔒 Private" : "🌐 Public",
+                    repo.htmlUrl());
+        } catch (Exception e) {
+            return "Error creating repository '" + name + "': " + e.getMessage();
+        }
+    }
+
+    @Tool(name = "deleteRepository", description = "Delete a GitHub repository. Requires authentication. WARNING: This action is irreversible! Specify the username and repository name.")
+    public String deleteRepository(String username, String repository) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot delete repository. GitHub token is not configured.";
+            }
+
+            gitHubService.deleteRepository(username, repository);
+            return String.format("🗑️ Repository %s/%s has been deleted successfully.", username, repository);
+        } catch (Exception e) {
+            return "Error deleting repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
+    @Tool(name = "updateRepository", description = "Update a GitHub repository's name, description, or visibility. Requires authentication. Specify username, current repository name, new name (or same), new description, and whether it should be private.")
+    public String updateRepository(String username, String repository, String newName, String description, Boolean isPrivate) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot update repository. GitHub token is not configured.";
+            }
+
+            boolean privateRepo = isPrivate != null ? isPrivate : false;
+            String repoName = (newName != null && !newName.isEmpty()) ? newName : repository;
+            String repoDescription = (description != null && !description.isEmpty()) ? description : "";
+
+            GitHubRepository repo = gitHubService.updateRepository(username, repository, repoName, repoDescription, privateRepo);
+
+            return String.format("""
+                    ✅ Repository updated successfully!
+                    
+                    Name: %s
+                    Description: %s
+                    Visibility: %s
+                    URL: %s
+                    """,
+                    repo.name(),
+                    repo.description() != null ? repo.description() : "No description",
+                    repo.isPrivate() ? "🔒 Private" : "🌐 Public",
+                    repo.htmlUrl());
+        } catch (Exception e) {
+            return "Error updating repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
     // ==================== COMMITS ====================
     @Tool(name = "getRepositoryCommits", description = "Get recent commits from a specific GitHub repository. Specify the username, repository name, and optionally the number of commits to retrieve (default: 10, max: 100).")
     public String getRepositoryCommits(String username, String repository, Integer limit) {
@@ -296,6 +369,35 @@ public class GitHubTools {
         }
     }
 
+    @Tool(name = "createPullRequest", description = "Create a new pull request in a GitHub repository. Requires authentication. Specify username, repository, PR title, head branch (source), base branch (target), and optionally the PR body/description.")
+    public String createPullRequest(String username, String repository, String title, String head, String base, String body) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot create pull request. GitHub token is not configured.";
+            }
+
+            String prBody = (body != null && !body.isEmpty()) ? body : "";
+            GitHubPullRequest pr = gitHubService.createPullRequest(username, repository, title, head, base, prBody);
+
+            return String.format("""
+                    ✅ Pull request created successfully!
+                    
+                    #%d - %s
+                    Repository: %s/%s
+                    From: %s → To: %s
+                    State: %s
+                    URL: %s
+                    """,
+                    pr.number(), pr.title(),
+                    username, repository,
+                    head, base,
+                    pr.state(),
+                    pr.htmlUrl());
+        } catch (Exception e) {
+            return "Error creating pull request in repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
     // ==================== BRANCHES ====================
     @Tool(name = "getRepositoryBranches", description = "Get all branches from a GitHub repository. Specify the username and repository name.")
     public String getRepositoryBranches(String username, String repository) {
@@ -319,6 +421,136 @@ public class GitHubTools {
             return result.toString();
         } catch (Exception e) {
             return "Error fetching branches for repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
+    @Tool(name = "createBranch", description = "Create a new branch in a GitHub repository. Requires authentication. Specify username, repository, new branch name, and the source branch to create from (e.g., 'main' or 'master').")
+    public String createBranch(String username, String repository, String branchName, String fromBranch) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot create branch. GitHub token is not configured.";
+            }
+
+            GitHubBranch branch = gitHubService.createBranch(username, repository, branchName, fromBranch);
+
+            return String.format("""
+                    ✅ Branch created successfully!
+                    
+                    Branch: %s
+                    Repository: %s/%s
+                    Created from: %s
+                    Latest commit: %s
+                    """,
+                    branch.name(),
+                    username, repository,
+                    fromBranch,
+                    branch.commit().sha().substring(0, 7));
+        } catch (Exception e) {
+            return "Error creating branch '" + branchName + "' in repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
+    @Tool(name = "deleteBranch", description = "Delete a branch from a GitHub repository. Requires authentication. WARNING: This action is irreversible! Specify username, repository, and branch name.")
+    public String deleteBranch(String username, String repository, String branchName) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot delete branch. GitHub token is not configured.";
+            }
+
+            gitHubService.deleteBranch(username, repository, branchName);
+            return String.format("🗑️ Branch '%s' has been deleted from %s/%s successfully.", branchName, username, repository);
+        } catch (Exception e) {
+            return "Error deleting branch '" + branchName + "' from repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
+    // ==================== FILE OPERATIONS ====================
+    @Tool(name = "getFileContent", description = "Get the content of a file from a GitHub repository. Specify username, repository, and file path (e.g., 'README.md' or 'src/main.py').")
+    public String getFileContent(String username, String repository, String path) {
+        try {
+            GitHubContent content = gitHubService.getFileContent(username, repository, path);
+
+            if (content == null) {
+                return String.format("File not found: %s in %s/%s", path, username, repository);
+            }
+
+            if (!"file".equals(content.type())) {
+                return String.format("'%s' is not a file (it's a %s)", path, content.type());
+            }
+
+            // Decode base64 content
+            String fileContent = "";
+            if (content.content() != null && content.encoding() != null && "base64".equals(content.encoding())) {
+                fileContent = new String(java.util.Base64.getDecoder().decode(content.content().replace("\n", "")));
+            }
+
+            return String.format("""
+                    📄 File: %s
+                    Repository: %s/%s
+                    Size: %.2f KB
+                    
+                    Content:
+                    ```
+                    %s
+                    ```
+                    
+                    🔗 URL: %s
+                    """,
+                    content.name(),
+                    username, repository,
+                    content.size() / 1024.0,
+                    fileContent,
+                    content.htmlUrl());
+        } catch (Exception e) {
+            return "Error fetching file '" + path + "' from repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
+    @Tool(name = "pushFileContent", description = "Create or update a file in a GitHub repository. Requires authentication. Specify username, repository, file path, file content, commit message, and branch name.")
+    public String pushFileContent(String username, String repository, String path, String content, String message, String branch) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot push file. GitHub token is not configured.";
+            }
+
+            String commitSha = gitHubService.pushFileContent(username, repository, path, content, message, branch);
+
+            if (commitSha == null) {
+                return "Error: Failed to push file.";
+            }
+
+            return String.format("""
+                    ✅ File pushed successfully!
+                    
+                    File: %s
+                    Repository: %s/%s
+                    Branch: %s
+                    Commit SHA: %s
+                    Message: %s
+                    View: https://github.com/%s/%s/blob/%s/%s
+                    """,
+                    path,
+                    username, repository,
+                    branch,
+                    commitSha.substring(0, 7),
+                    message,
+                    username, repository, branch, path);
+        } catch (Exception e) {
+            return "Error pushing file '" + path + "' to repository '" + username + "/" + repository + "': " + e.getMessage();
+        }
+    }
+
+    @Tool(name = "deleteFile", description = "Delete a file from a GitHub repository. Requires authentication. WARNING: This action is irreversible! Specify username, repository, file path, commit message, and branch name.")
+    public String deleteFile(String username, String repository, String path, String message, String branch) {
+        try {
+            if (!gitHubService.hasAuthentication()) {
+                return "Error: Cannot delete file. GitHub token is not configured.";
+            }
+
+            gitHubService.deleteFile(username, repository, path, message, branch);
+            return String.format("🗑️ File '%s' has been deleted from %s/%s (branch: %s) successfully.", path, username, repository, branch);
+        } catch (Exception e) {
+            return "Error deleting file '" + path + "' from repository '" + username + "/" + repository + "': " + e.getMessage();
         }
     }
 
@@ -532,48 +764,6 @@ public class GitHubTools {
             return result.toString();
         } catch (Exception e) {
             return "Error fetching workflow runs for repository '" + username + "/" + repository + "': " + e.getMessage();
-        }
-    }
-
-    // ==================== FILE CONTENT ====================
-    @Tool(name = "getFileContent", description = "Get the content of a file from a GitHub repository. Specify username, repository, and file path (e.g., 'README.md' or 'src/main.py').")
-    public String getFileContent(String username, String repository, String path) {
-        try {
-            GitHubContent content = gitHubService.getFileContent(username, repository, path);
-
-            if (content == null) {
-                return String.format("File not found: %s in %s/%s", path, username, repository);
-            }
-
-            if (!"file".equals(content.type())) {
-                return String.format("'%s' is not a file (it's a %s)", path, content.type());
-            }
-
-            // Decode base64 content
-            String fileContent = "";
-            if (content.content() != null && content.encoding() != null && "base64".equals(content.encoding())) {
-                fileContent = new String(java.util.Base64.getDecoder().decode(content.content().replace("\n", "")));
-            }
-
-            return String.format("""
-                    📄 File: %s
-                    Repository: %s/%s
-                    Size: %.2f KB
-                    
-                    Content:
-```
-                    %s
-```
-                    
-                    🔗 URL: %s
-                    """,
-                    content.name(),
-                    username, repository,
-                    content.size() / 1024.0,
-                    fileContent,
-                    content.htmlUrl());
-        } catch (Exception e) {
-            return "Error fetching file '" + path + "' from repository '" + username + "/" + repository + "': " + e.getMessage();
         }
     }
 
