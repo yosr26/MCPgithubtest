@@ -14,7 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class MemoryService {
 
-    private static final String MEMORY_FILE = "memory.json";
+    private static final String MEMORY_FILE
+            = "C:\\Users\\user\\Desktop\\MCPgithubtest\\memory.json";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public void remember(String key, String value) {
