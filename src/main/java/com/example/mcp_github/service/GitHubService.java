@@ -508,4 +508,26 @@ public class GitHubService {
     public boolean hasAuthentication() {
         return hasToken;
     }
+
+    public void mergePullRequest(String username, String repo, int prNumber, String commitMessage) {
+        if (!hasToken) {
+            throw new IllegalStateException("GitHub token required to merge pull requests");
+        }
+
+        record MergeRequest(
+                @JsonProperty("commit_message")
+                String commitMessage,
+                @JsonProperty("merge_method")
+                String mergeMethod
+                ) {
+
+        }
+
+        webClient.put()
+                .uri("/repos/{username}/{repo}/pulls/{prNumber}/merge", username, repo, prNumber)
+                .bodyValue(new MergeRequest(commitMessage, "merge"))
+                .retrieve()
+                .bodyToMono(Void.class)
+                .block();
+    }
 }

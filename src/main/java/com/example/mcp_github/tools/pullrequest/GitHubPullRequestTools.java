@@ -90,4 +90,25 @@ public class GitHubPullRequestTools {
     private int resolveLimit(Integer limit) {
         return (limit != null && limit > 0) ? Math.min(limit, 100) : 10;
     }
+
+    @Tool(name = "mergePullRequest",
+            description = "Merge an open pull request. Requires authentication.")
+    public String mergePullRequest(
+            @ToolParam(description = "Repository owner username") String username,
+            @ToolParam(description = "Repository name") String repository,
+            @ToolParam(description = "Pull request number") Integer prNumber,
+            @ToolParam(description = "Commit message for the merge (optional)") String commitMessage) {
+        try {
+            requireAuth();
+            String message = (commitMessage != null && !commitMessage.isBlank())
+                    ? commitMessage
+                    : "Merged PR #" + prNumber;
+            gitHubService.mergePullRequest(username, repository, prNumber, message);
+            return "✅ Pull request #%d merged successfully in %s/%s."
+                    .formatted(prNumber, username, repository);
+        } catch (Exception e) {
+            return "Error merging PR #%d in '%s/%s': %s"
+                    .formatted(prNumber, username, repository, e.getMessage());
+        }
+    }
 }
